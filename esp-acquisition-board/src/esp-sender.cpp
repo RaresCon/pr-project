@@ -1,8 +1,8 @@
 #include <WiFi.h>
 #include <esp-sender.hpp>
 #include <esp_wifi.h>
-#include <pair-protocol.hpp>
 #include <comm-protocol.hpp>
+#include <sensors.hpp>
 
 static bool channelFound = false;
 static uint8_t channel = 0;
@@ -10,6 +10,20 @@ static uint8_t channel = 0;
 static Pairing parentType;
 static esp_now_peer_info_t parentInfo;
 static vector<esp_now_peer_info_t> slaves;
+
+void sendSensorData()
+{
+    raw_msg msg;
+    sensor_msg data;
+
+    populate_sensor_data(&data);
+
+    msg.type = SENSOR_DATA;
+    msg.board_id = 10;
+    msg.msg.sensor_data = data;
+
+    esp_now_send(parentInfo.peer_addr, (uint8_t *)&msg, sizeof(msg));
+}
 
 void addParentInfo(const uint8_t *mac)
 {
@@ -87,6 +101,7 @@ void setup_wifi()
 void setup_esp_now()
 {
     esp_now_peer_info_t bcastInfo;
+    raw_msg pairing;
 
     if (esp_now_init() != ESP_OK) {
         Serial.println("Error initializing ESP-NOW");
@@ -101,13 +116,14 @@ void setup_esp_now()
         Serial.println("Failed to add peer.");
     slaves.push_back(bcastInfo);
 
+    pairing.type = PAIR;
+    pairing.board_id = 10;
+    pairing.msg.pair_data.type = PAIR_REQ;
+    WiFi.macAddress(pairing.msg.pair_data.peerMac);
     while (!channelFound) {
-        raw_msg pairing;
-        pairing.type = PAIR;
-        pairing.msg.pair_data.type = PAIR_REQ;
-        WiFi.macAddress(pairing.msg.pair_data.peerMac);
         esp_now_send(bCastAddr, (uint8_t *)&pairing, sizeof(pairing));
         sleep(2);
         tryNextChannel();
     }
+    esp_now_unregister_send_cb();
 }
