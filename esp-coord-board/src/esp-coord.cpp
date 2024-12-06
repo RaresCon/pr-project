@@ -5,8 +5,8 @@
 #include <comm-protocol.hpp>
 
 static vector<esp_now_peer_info_t> slaves;
-static const char* ssid = "Galaxy A52s";
-static const char* password = "hbhi0557";
+static const char* ssid = "TPL_DGRL";
+static const char* password = "ccRDGL-1524";
 
 void managePairReq(pair_msg msg)
 {
@@ -45,13 +45,18 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len)
         Serial.print(mac[i]);
         if (i != 5) Serial.print(":");
     }
-    Serial.println();
+    Serial.print("\nBoard ID: ");
+    Serial.println(msg->board_id);
 
     switch (msg->type) {
         case PAIR:
             managePairReq(msg->msg.pair_data);
             break;
         case SENSOR_DATA:
+            Serial.print("Temp: ");
+            Serial.println(msg->msg.sensor_data.temp);
+            Serial.print("Pres: ");
+            Serial.println(msg->msg.sensor_data.pres);
             break;
         case COMMAND:
             break;
