@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <esp-coord.hpp>
+#include <mqtt-client.hpp>
 
 void setup() {
     Serial.begin(115200);
@@ -9,6 +10,7 @@ void setup() {
     digitalWrite(LED_BUILTIN, HIGH);
 
     setup_wifi();
+    setup_mqtt_client();
     setup_esp_now();
 }
 

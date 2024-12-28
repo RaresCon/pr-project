@@ -3,10 +3,11 @@
 #include <esp_wifi.h>
 #include <pair-protocol.hpp>
 #include <comm-protocol.hpp>
+#include <mqtt-client.hpp>
 
 static vector<esp_now_peer_info_t> slaves;
-static const char* ssid = "TPL_DGRL";
-static const char* password = "ccRDGL-1524";
+static const char* ssid = "";
+static const char* password = "";
 
 void managePairReq(pair_msg msg)
 {
@@ -53,10 +54,7 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len)
             managePairReq(msg->msg.pair_data);
             break;
         case SENSOR_DATA:
-            Serial.print("Temp: ");
-            Serial.println(msg->msg.sensor_data.temp);
-            Serial.print("Pres: ");
-            Serial.println(msg->msg.sensor_data.pres);
+            mqtt_send_sensor_data(msg->board_id, msg->msg.sensor_data);
             break;
         case COMMAND:
             break;
@@ -85,6 +83,7 @@ void setup_wifi()
         sleep(1);
     }
     Serial.println("Connected.");
+    Serial.println(WiFi.localIP());
 }
 
 void setup_esp_now()
