@@ -4,10 +4,9 @@
 #include <pair-protocol.hpp>
 #include <comm-protocol.hpp>
 #include <mqtt-client.hpp>
+#include <esp-prereq.hpp>
 
 static vector<esp_now_peer_info_t> slaves;
-static const char* ssid = "";
-static const char* password = "";
 
 void managePairReq(pair_msg msg)
 {

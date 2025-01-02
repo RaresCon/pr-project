@@ -3,18 +3,17 @@
 #include <PubSubClient.h>
 #include <esp-coord.hpp>
 #include <mqtt-client.hpp>
+#include <esp-prereq.hpp>
 
 WiFiClient espClient;
 PubSubClient client(espClient);
 static const char *topic = "sensor/data";
 
-const char* mqtt_server = "192.168.45.82";
-
 void setup_mqtt_client()
 {
     uint8_t retry = 0;
 
-    client.setServer(mqtt_server, 1883);
+    client.setServer(mqtt_broker, 1883);
     while (!client.connected() && retry < MAX_RETRY) {
         Serial.println("Waiting for connection to MQTT Broker...");
         if (client.connect("ESP32Client")) {
