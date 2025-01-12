@@ -6,4 +6,4 @@
 #define MAX_RETRY 10
 
 void setup_mqtt_client();
-void mqtt_send_sensor_data(uint8_t board_id, sensor_msg data);
+void mqtt_send_sensor_data(char *board_id, sensor_msg data);

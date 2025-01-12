@@ -6,23 +6,60 @@
 
 static bool channelFound = false;
 static uint8_t channel = 0;
-
-static Pairing parentType;
+static TaskHandle_t sensorTaskHandle;
+static TaskHandle_t alarmTaskHandle;
+static pairing parentType;
 static esp_now_peer_info_t parentInfo;
 static vector<esp_now_peer_info_t> slaves;
+static uint8_t alarm_pin = GPIO_NUM_14;
+static bool do_sensors = true, do_alarm = false, do_alarm_or = false;
 
-void sendSensorData()
+#define FORCE_SKIP_COORD
+#ifdef FORCE_SKIP_COORD
+static char boardId[33] = "Beta";
+#else
+static char boardId[33] = "Alhpa";
+#endif
+
+void sendSensorData(void *parameter)
 {
-    raw_msg msg;
-    sensor_msg data;
+    while (true) {
+        raw_msg msg;
+        sensor_msg data;
+        if (!do_sensors) {
+            vTaskDelay(pdMS_TO_TICKS(5000));
+            continue;
+        }
 
-    populate_sensor_data(&data);
+        memset(&data, 0, sizeof(data));
+        do_alarm = populate_sensor_data(&data);
 
-    msg.type = SENSOR_DATA;
-    msg.board_id = 10;
-    msg.msg.sensor_data = data;
+        msg.type = SENSOR_DATA;
+        strcpy(msg.board_id, boardId);
+        msg.msg.sensor_data = data;
 
-    esp_now_send(parentInfo.peer_addr, (uint8_t *)&msg, sizeof(msg));
+        esp_now_send(parentInfo.peer_addr, (uint8_t *)&msg, sizeof(msg));
+        vTaskDelay(pdMS_TO_TICKS(5000));
+    }
+}
+
+void manageAlarm(void *parameter)
+{
+    uint8_t mode = LOW;
+
+    pinMode(alarm_pin, OUTPUT);
+    digitalWrite(alarm_pin, LOW);
+
+    while (true) {
+        if (!do_alarm_or && !do_alarm) {
+            vTaskDelay(pdMS_TO_TICKS(2000));
+            continue;
+        }
+
+        digitalWrite(alarm_pin, mode);
+        mode = (++mode) % 2;
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
 }
 
 void addParentInfo(const uint8_t *mac)
@@ -38,20 +75,94 @@ void addParentInfo(const uint8_t *mac)
     Serial.println(".");
 }
 
+void resUpperSlave(pair_msg msg)
+{
+    raw_msg res;
+    esp_err_t esp_res;
+    esp_now_peer_info_t lowerSlaveInfo;
+
+    if (msg.type != PAIR_REQ)
+        return;
+
+    memset(&lowerSlaveInfo, 0, sizeof(lowerSlaveInfo));
+    memcpy(lowerSlaveInfo.peer_addr, msg.peerMac, 6);
+    esp_res = esp_now_add_peer(&lowerSlaveInfo);
+    if (esp_res != ESP_OK && esp_res != ESP_ERR_ESPNOW_EXIST) {
+        Serial.println("Failed to add peer during pairing");
+        return;
+    }
+
+    res.type = PAIR;
+    res.msg.pair_data.type = PAIR_SLAVE;
+    esp_wifi_get_mac(WIFI_IF_STA, res.msg.pair_data.peerMac);
+    esp_now_send(msg.peerMac, (uint8_t *)&res, sizeof(res));
+
+    if (esp_res != ESP_ERR_ESPNOW_EXIST) {
+        slaves.push_back(lowerSlaveInfo);
+        Serial.println("Pairing with lower slave successful!");
+    }
+}
+
 void managePairReq(pair_msg msg)
 {
     switch (msg.type) {
         case PAIR_COORD:
         case PAIR_SLAVE:
+#ifdef FORCE_SKIP_COORD
+            if (msg.type == PAIR_COORD) {
+                Serial.println("Skipping Coordinator");
+                return;
+            }
+#endif
             channelFound = true;
             parentType = msg.type;
             addParentInfo(msg.peerMac);
             break;
         case PAIR_REQ:
+            resUpperSlave(msg);
             break;
         default:
             break;
     }
+}
+
+void manageSlaveData(raw_msg *msg)
+{
+    Serial.println("Sending data from lower slave");
+    if (esp_now_send(parentInfo.peer_addr, (uint8_t *)msg, sizeof(*msg)) != ESP_OK) {
+        Serial.println("Error while sending data from lower slave");
+    }
+}
+
+void manageCommandReq(raw_msg *msg)
+{
+    if (strcmp(boardId, msg->board_id)) {
+        for (esp_now_peer_info_t slave : slaves) {
+            Serial.println("Sending command to lower slaves");
+            esp_now_send(slave.peer_addr, (uint8_t *)msg, sizeof(*msg));
+        }
+        return;
+    }
+
+    Serial.println(msg->msg.command.type);
+    switch (msg->msg.command.type) {
+        case DISABLE:
+            do_sensors = false;
+            break;
+        case ENABLE:
+            do_sensors = true;
+            break;
+        case ALARM:
+            do_alarm_or = !do_alarm_or;
+            break;
+        default:
+            break;
+    }
+    Serial.println("Board Status:");
+    Serial.print("\tSensors: ");
+    Serial.println(do_sensors);
+    Serial.print("\tAlarm: ");
+    Serial.println(do_alarm);
 }
 
 void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len)
@@ -60,7 +171,7 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len)
 
     Serial.print("Incoming MAC Address: ");
     for (int i = 0; i < 6; i++) {
-        Serial.print(mac[i]);
+        Serial.print(mac[i], HEX);
         if (i != 5) Serial.print(":");
     }
     Serial.println();
@@ -70,8 +181,10 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len)
             managePairReq(msg->msg.pair_data);
             break;
         case SENSOR_DATA:
+            manageSlaveData(msg);
             break;
         case COMMAND:
+            manageCommandReq(msg);
             break;
         default:
             break;
@@ -95,6 +208,7 @@ void tryNextChannel()
 
 void setup_wifi()
 {
+    Serial.println(boardId);
     WiFi.mode(WIFI_MODE_STA);
 }
 
@@ -114,10 +228,9 @@ void setup_esp_now()
     memcpy(bcastInfo.peer_addr, bCastAddr, sizeof(bCastAddr));
     if (esp_now_add_peer(&bcastInfo) != ESP_OK)
         Serial.println("Failed to add peer.");
-    slaves.push_back(bcastInfo);
 
     pairing.type = PAIR;
-    pairing.board_id = 10;
+    strcpy(pairing.board_id, boardId);
     pairing.msg.pair_data.type = PAIR_REQ;
     WiFi.macAddress(pairing.msg.pair_data.peerMac);
     while (!channelFound) {
@@ -126,4 +239,23 @@ void setup_esp_now()
         tryNextChannel();
     }
     esp_now_unregister_send_cb();
+
+    xTaskCreatePinnedToCore(
+        sendSensorData,
+        "sendSensorData",
+        4096,
+        NULL,
+        1,
+        &sensorTaskHandle,
+        1
+    );
+    xTaskCreatePinnedToCore(
+        manageAlarm,
+        "manageAlarm",
+        4096,
+        NULL,
+        1,
+        &alarmTaskHandle,
+        1
+    );
 }

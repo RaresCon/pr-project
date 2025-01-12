@@ -4,4 +4,4 @@
 #include <sensor-protocol.hpp>
 
 void setup_bmp();
-void populate_sensor_data(sensor_msg *msg);
+bool populate_sensor_data(sensor_msg *msg);

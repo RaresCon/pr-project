@@ -36,13 +36,33 @@ void managePairReq(pair_msg msg)
     }
 }
 
+void manageCommandReq(const char *boardId, const char *command)
+{
+    raw_msg msg;
+
+    msg.type = COMMAND;
+
+    strcpy(msg.board_id, boardId);
+    msg.msg.command.type = encode_command(command);
+    if (msg.msg.command.type == ERROR) {
+        Serial.println("Sending command to slaves failed!");
+        return;
+    }
+
+    for (esp_now_peer_info_t slave : slaves) {
+        Serial.println("Sending command to slaves\n");
+        esp_now_send(slave.peer_addr, (uint8_t *)&msg, sizeof(msg));
+    }
+}
+
 void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len)
 {
     raw_msg *msg = (raw_msg *)incomingData;
+    esp_now_peer_info_t slave;
 
     Serial.print("Incoming MAC Address: ");
     for (int i = 0; i < 6; i++) {
-        Serial.print(mac[i]);
+        Serial.print(mac[i], HEX);
         if (i != 5) Serial.print(":");
     }
     Serial.print("\nBoard ID: ");
@@ -55,21 +75,16 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len)
         case SENSOR_DATA:
             mqtt_send_sensor_data(msg->board_id, msg->msg.sensor_data);
             break;
-        case COMMAND:
-            break;
         default:
             break;
     }
-}
 
-void onDataSent(const uint8_t *mac_addr, esp_now_send_status_t status)
-{
-    Serial.print("Pair response to MAC Address: ");
-    for (int i = 0; i < 6; i++) {
-        Serial.print(mac_addr[i]);
-        if (i != 5) Serial.print(":");
+    if (esp_now_get_peer(mac, &slave) == ESP_ERR_ESPNOW_NOT_FOUND) {
+        memset(&slave, 0, sizeof(slave));
+        memcpy(slave.peer_addr, mac, sizeof(slave.peer_addr));
+        esp_now_add_peer(&slave);
+        slaves.push_back(slave);
     }
-    Serial.println(".");
 }
 
 void setup_wifi()
@@ -93,12 +108,10 @@ void setup_esp_now()
         Serial.println("Error initializing ESP-NOW");
         return;
     }
-    esp_now_register_send_cb(onDataSent);
     esp_now_register_recv_cb(OnDataRecv);
 
     memset(&bcastInfo, 0, sizeof(bcastInfo));
     memcpy(bcastInfo.peer_addr, bCastAddr, sizeof(bCastAddr));
     if (esp_now_add_peer(&bcastInfo) != ESP_OK)
         Serial.println("Failed to add peer.");
-    slaves.push_back(bcastInfo);
 }

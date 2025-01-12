@@ -7,3 +7,4 @@ using namespace std;
 
 void setup_wifi();
 void setup_esp_now();
+void manageCommandReq(const char *boardId, const char *command);

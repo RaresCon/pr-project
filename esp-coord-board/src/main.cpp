@@ -1,10 +1,9 @@
 #include <Arduino.h>
 #include <esp-coord.hpp>
 #include <mqtt-client.hpp>
-#include <esp-prereq.hpp>
 
 void setup() {
-    Serial.begin(baud_rate);
+    Serial.begin(115200);
     Serial.println("COORDINATOR BOARD\n");
 
     pinMode(LED_BUILTIN, OUTPUT);

@@ -14,6 +14,4 @@ void setup() {
 }
 
 void loop() {
-    sendSensorData();
-    sleep(2);
 }
