@@ -78,6 +78,73 @@ Below is the pin configuration for connecting the **ESP32** microcontroller to t
    - Power on all nodes and the coordinator.
    - Monitor the network as it dynamically integrates all nodes and starts collecting data.
 
+---
+
+## Implementation
+### Backend
+- The backend uses **Express** to create RESTful APIs for interacting with the data.
+- **Mongoose** is used for schema definition and interaction with MongoDB Atlas.
+- An **MQTT client** subscribes to sensor data topics and processes incoming messages. The data is saved in MongoDB under the `readings` schema.
+- Toggle routes (`/api/alarm` and `/api/disable`) publish MQTT messages to the broker, allowing real-time control of boards.
+
+### ESP32
+- The ESP32 Aquisition boards send sensor data over ESP-Now after pairing dynamically with other slaves or with the Coordinator and they control the local alarm, activating it if the sensor values are exceeding the
+thresholds.
+- The ESP32 Coordinator publishes sensor data (temperature, pressure, air quality) to an MQTT broker over a secure TLS connection.
+- JSON format for messages ensures consistency and compatibility.
+
+### React Frontend
+- The frontend fetches board data from the backend API and dynamically renders graphs and controls.
+- **Chart.js** is used for data visualization, offering line charts for each sensor type.
+- Controls include alarm toggling and measurement disabling/enabling.
+
+---
+
+## Visualization and Processing of Data
+### Data Flow
+1. ESP32 sends sensor data to the MQTT broker.
+2. Backend receives and processes the data, storing it in MongoDB.
+3. React frontend fetches data via RESTful APIs and visualizes it in real time.
+
+### Graph Features
+- Continuous lines represent sensor data.
+- Adjustable time ranges (last 5 minutes to 7 days).
+- Real-time updates every 30 seconds.
+
+### Table View
+- Switch between graph and table views to see raw data entries.
+
+---
+
+## Security
+### TLS Implementation
+- The ESP32 and backend communicate securely with the MQTT broker using TLS.
+- Certificates are required:
+  - **CA Certificate:** Verifies the broker's identity.
+  - **Client Certificate & Key:** Authenticates the ESP32 and backend to the broker.
+
+### Generating Certificates
+1. Create a certificate authority (CA):
+   ```bash
+   openssl req -new -x509 -days 365 -key ca.key -out ca.crt
+   ```
+2. Generate a key and certificate signing request (CSR) for the client:
+   ```bash
+   openssl req -new -key client.key -out client.csr
+   ```
+3. Sign the CSR with the CA:
+   ```bash
+   openssl x509 -req -in client.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out client.crt -days 365
+   ```
+4. Use these certificates in the `.env` file for the backend and flash them to the ESP32.
+
+### Other Security Measures
+- **Rate Limiting:** Limits email alerts to a maximum of one every 5 minutes.
+- **Validation:** Ensures incoming data conforms to the expected structure.
+- **Environment Variables:** Securely stores sensitive information like database URIs and TLS paths.
+
+---
+
 # **Example Applications**
 - **Mine Safety**: Monitor gas levels to ensure worker safety.
 - **Cave Research**: Track environmental changes over time for scientific studies.
